@@ -8,8 +8,8 @@ const food_style = "#00e000";
 
 class GameBoard {
     constructor() {
-        this.width = 40;
-        this.height = 40;
+        this.width = 64;
+        this.height = 64;
     }
 
     isNotInBound(coord) {
@@ -245,7 +245,7 @@ class SnakeKeyboardController {
     constructor(snake, control_map) {
         this.snake = snake;
         this.command = null;
-        document.addEventListener('keydown', (evt) => {
+        this.event_listener_id = document.addEventListener('keydown', (evt) => {
             let newCommand = null;
             switch (evt.key.toLowerCase()) {
                 case control_map.up.toLowerCase():
@@ -279,24 +279,39 @@ class SnakeKeyboardController {
     }
 }
 
-function createSnakesKeyboardControllers(snakes) {
-    const controls_maps = [
-        { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
-        { up: 'w', down: 's', left: 'a', right: 'd' },
-    ];
+class SnakesControllers {
+    constructor(snakes) {
+        const createSnakesKeyboardControllers = () => {
+            const controls_maps = [
+                { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' },
+                { up: 'w', down: 's', left: 'a', right: 'd' },
+            ];
 
-    res = {};
-    for (const [i, [snake_name, snake]] of Object.entries(snakes).entries()) {
-        console.log('create controller');
-        res[snake_name] = new SnakeKeyboardController(
-            snake,
-            controls_maps[i],
-        );
+            let res = {};
+            for (const [i, [snake_name, snake]] of Object.entries(snakes).entries()) {
+                console.log('create controller');
+                res[snake_name] = new SnakeKeyboardController(
+                    snake,
+                    controls_maps[i],
+                );
+            }
+            return res;
+        }
+
+        this.snake_name_to_controller = createSnakesKeyboardControllers();
     }
-    return res;
+
+    popSnakesCommands() {
+        let res = {};
+        for (const [snake_name, controller] of Object.entries(this.snake_name_to_controller)) {
+            res[snake_name] = controller.popCommand();
+        }
+        return res;
+    }
 }
 
-function run(players_count) {
+
+function run_snake_round(players_count) {
     let snakes_names = [];
     for (let i = 0; i < players_count; ++i) {
         snakes_names.push(`snake_${i + 1}`);
@@ -305,30 +320,32 @@ function run(players_count) {
     let snake_round = new SnakeRound(snakes_names);
     const game_canvas = document.getElementById("game_canvas");
     const game_drawer = new GameDrawer(game_canvas);
+    const snakes_controllers = new SnakesControllers(snake_round.snakes);
 
-    let snakes_controllers = createSnakesKeyboardControllers(snake_round.snakes);
-    function popSnakesCommands() {
-        res = {};
-        for (const snake_name in snakes_controllers) {
-            res[snake_name] = snakes_controllers[snake_name].popCommand();
+    let last_tick = performance.now();
+    const tick_length = 200;
+
+    function GameCalc(num_tick) {
+        const animation_request_id = window.requestAnimationFrame(GameCalc);
+
+        const logicUpdateRequired = () => num_tick > last_tick + tick_length;
+        const rendering_required = logicUpdateRequired();
+
+        while (logicUpdateRequired()) {
+            snake_round.calcLogic(snakes_controllers.popSnakesCommands());
+            last_tick += tick_length;
         }
-        return res;
-    }
 
-    function GameCalc() {
-        console.log("Game loaded");
-
-        if (snake_round.losing_snakes_names.length) {
-            clearInterval(timerId);
+        if (!rendering_required) {
             return;
         }
-
-        snake_round.calcLogic(popSnakesCommands());
 
         game_drawer.clearBoard();
         game_drawer.drawSnakeRound(snake_round);
 
         if (snake_round.losing_snakes_names.length) {
+            window.cancelAnimationFrame(animation_request_id);
+
             const canvas_ctx = game_canvas.getContext("2d");
             canvas_ctx.font = "bold 35px Sans-Serif";
             canvas_ctx.fillStyle = text_style;
@@ -341,8 +358,7 @@ function run(players_count) {
         }
     }
 
-    GameCalc();
-    let timerId = setInterval(GameCalc, 150);
+    GameCalc(performance.now());
 }
 
-run(1);
+run_snake_round(1);
