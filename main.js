@@ -1,10 +1,10 @@
-const text_style = "#7605a6";
+const text_style = '#ffcc00';
 const snake_styles = [
     { head: '#ff0000', body: '#d00000' },
     { head: '#2020ff', body: '#2020d0' },
 ];
 
-const food_style = "#00e000";
+const food_style = '#00e000';
 
 class GameBoard {
     constructor() {
@@ -21,7 +21,7 @@ class GameBoard {
 class GameDrawer {
     constructor(game_canvas) {
         this.game_canvas = game_canvas;
-        this.game_canvas_ctx = game_canvas.getContext("2d");
+        this.game_canvas_ctx = game_canvas.getContext('2d');
     }
 
     drawBoardRect(coord, style, game_board) {
@@ -245,7 +245,7 @@ class SnakeKeyboardController {
     constructor(snake, control_map) {
         this.snake = snake;
         this.command = null;
-        this.event_listener_id = document.addEventListener('keydown', (evt) => {
+        this.event_listener = (evt) => {
             let newCommand = null;
             switch (evt.key.toLowerCase()) {
                 case control_map.up.toLowerCase():
@@ -261,7 +261,7 @@ class SnakeKeyboardController {
                     newCommand = SnakeDirection.RIGHT;
                     break;
             }
-            console.log('new command:', newCommand, 'key:', evt.key);
+            console.log('new SNAKE command:', newCommand, 'key:', evt.key);
 
             if (!newCommand)
                 return;
@@ -269,7 +269,13 @@ class SnakeKeyboardController {
             if (!isOpositDirection(newCommand, this.snake.direction)) {
                 this.command = newCommand;
             }
-        }, false);
+        };
+
+        document.addEventListener('keydown', this.event_listener, false);
+    }
+
+    destroy() {
+        window.removeEventListener('keydown', this.event_listener, false);
     }
 
     popCommand() {
@@ -301,6 +307,12 @@ class SnakesControllers {
         this.snake_name_to_controller = createSnakesKeyboardControllers();
     }
 
+    destory() {
+        for (controller of this.snake_name_to_controller) {
+            controller.destroy();
+        }
+    }
+
     popSnakesCommands() {
         let res = {};
         for (const [snake_name, controller] of Object.entries(this.snake_name_to_controller)) {
@@ -310,55 +322,168 @@ class SnakesControllers {
     }
 }
 
+class SnakeScene {
+    constructor(players_count) {
+        this.snakes_names = [];
+        for (let i = 0; i < players_count; ++i) {
+            this.snakes_names.push(`snake_${i + 1}`);
+        }
 
-function run_snake_round(players_count) {
-    let snakes_names = [];
-    for (let i = 0; i < players_count; ++i) {
-        snakes_names.push(`snake_${i + 1}`);
+        this.snake_round = new SnakeRound(this.snakes_names);
+        this.game_canvas = document.getElementById('game_canvas');
+        this.game_drawer = new GameDrawer(this.game_canvas);
+        this.snakes_controllers = new SnakesControllers(this.snake_round.snakes);
     }
 
-    let snake_round = new SnakeRound(snakes_names);
-    const game_canvas = document.getElementById("game_canvas");
-    const game_drawer = new GameDrawer(game_canvas);
-    const snakes_controllers = new SnakesControllers(snake_round.snakes);
+    destroy() {
+        this.snakes_controllers.destory();
+    }
 
-    let last_tick = performance.now();
-    const tick_length = 200;
+    getTickLength() {
+        return 200;
+    }
 
-    function GameCalc(num_tick) {
-        const animation_request_id = window.requestAnimationFrame(GameCalc);
-
-        const logicUpdateRequired = () => num_tick > last_tick + tick_length;
-        const rendering_required = logicUpdateRequired();
-
-        while (logicUpdateRequired()) {
-            snake_round.calcLogic(snakes_controllers.popSnakesCommands());
-            last_tick += tick_length;
-        }
-
-        if (!rendering_required) {
+    calcLogic() {
+        const is_end = this.snake_round.losing_snakes_names.length;
+        if (is_end) {
             return;
         }
+        this.snake_round.calcLogic(this.snakes_controllers.popSnakesCommands());
+    }
 
-        game_drawer.clearBoard();
-        game_drawer.drawSnakeRound(snake_round);
+    draw() {
+        this.game_drawer.clearBoard();
+        this.game_drawer.drawSnakeRound(this.snake_round);
 
-        if (snake_round.losing_snakes_names.length) {
-            window.cancelAnimationFrame(animation_request_id);
-
-            const canvas_ctx = game_canvas.getContext("2d");
-            canvas_ctx.font = "bold 35px Sans-Serif";
+        const is_end = this.snake_round.losing_snakes_names.length;
+        if (is_end) {
+            const canvas_ctx = this.game_canvas.getContext('2d');
+            canvas_ctx.font = 'bold 35px Sans-Serif';
             canvas_ctx.fillStyle = text_style;
-            canvas_ctx.textAlign = "center";
-            const { width, height } = game_canvas.getBoundingClientRect();
-            const message = snake_round.losing_snakes_names.length > 1
-                ? `${snake_round.losing_snakes_names} are dead :(`
-                : `${snake_round.losing_snakes_names} is dead :(`;
+            canvas_ctx.textAlign = 'center';
+            const { width, height } = this.game_canvas.getBoundingClientRect();
+            const message = this.snake_round.losing_snakes_names.length > 1
+                ? `${this.snake_round.losing_snakes_names} are dead :(`
+                : `${this.snake_round.losing_snakes_names} is dead :(`;
             canvas_ctx.fillText(message, width / 2, height / 2);
         }
     }
 
-    GameCalc(performance.now());
+    getNextScene() {
+    }
 }
 
-run_snake_round(1);
+class StartMenu {
+    constructor() {
+        this.game_canvas = document.getElementById('game_canvas');
+        this.menu_items = {
+            'start one player game': () => { console.log('snake 1'); this.next_scene = new SnakeScene(1); },
+            'start two players game': () => { console.log('snake 2'); this.next_scene = new SnakeScene(2); },
+        }
+        this.menu_active_item = 0;
+        this.next_scene = null;
+
+        this.event_listener = (evt) => {
+            console.log('process MENU', evt);
+            const menu_size = Object.keys(this.menu_items).length;
+            switch (evt.key) {
+                case 'ArrowUp':
+                    this.menu_active_item -= 1;
+                    if (this.menu_active_item < 0) {
+                        this.menu_active_item = menu_size - 1;
+                    }
+                    break;
+                case 'ArrowDown':
+                    this.menu_active_item += 1;
+                    if (this.menu_active_item >= menu_size) {
+                        this.menu_active_item = 0;
+                    }
+                    break;
+                case 'Enter':
+                    Object.values(this.menu_items)[this.menu_active_item]();
+                    break;
+            }
+        };
+
+        document.addEventListener('keydown', this.event_listener, false);
+    }
+
+    destroy() {
+        console.log('destroy StartMenu');
+        document.removeEventListener('keydown', this.event_listener, false);
+    }
+
+    getTickLength() {
+        return 50;
+    }
+
+    calcLogic() {
+    }
+
+    draw() {
+        const canvas_ctx = this.game_canvas.getContext('2d');
+        const font_size_px = 35;
+        canvas_ctx.font = `bold ${font_size_px}px Sans-Serif`;
+        canvas_ctx.fillStyle = text_style;
+        canvas_ctx.textAlign = 'center';
+        const { width, height } = this.game_canvas.getBoundingClientRect();
+        canvas_ctx.clearRect(0, 0, width, height);
+        for (const [item_id, item_name] of Object.keys(this.menu_items).entries()) {
+            const message = (item_id == this.menu_active_item) ? `> ${item_name} <` : item_name;
+            const item_height_correction = -(font_size_px * (Object.keys(this.menu_items).length - 1)) / 2;
+            canvas_ctx.fillText(message, width / 2, height / 2 + (item_id * font_size_px) + item_height_correction);
+        }
+        canvas_ctx.stroke();
+    }
+
+    getNextScene() {
+        if (this.next_scene) {
+            return this.next_scene;
+        }
+    }
+}
+
+class SeceneRunner {
+    constructor(scene) {
+        this.scene = scene;
+    }
+
+    run() {
+        let last_tick = performance.now();
+        let scene = this.scene;
+        let tick_length = scene.getTickLength();
+
+        function process(num_tick) {
+            window.requestAnimationFrame(process);
+            const isLogicUpdateRequired = () => num_tick > last_tick + tick_length;
+            const rendering_required = isLogicUpdateRequired();
+
+            while (isLogicUpdateRequired()) {
+                scene.calcLogic();
+                last_tick += tick_length;
+            }
+
+            if (!rendering_required) {
+                return;
+            }
+
+            scene.draw();
+
+            const nextScene = scene.getNextScene();
+            if (nextScene) {
+                scene.destroy();
+                scene = null;
+                scene = nextScene;
+                tick_length = scene.getTickLength();
+                last_tick = performance.now();
+            }
+        }
+
+        process(performance.now());
+    }
+}
+
+(() => {
+    const game_loop = new SeceneRunner(new StartMenu());
+    game_loop.run();
+})();
